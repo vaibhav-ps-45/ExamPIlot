@@ -1,0 +1,545 @@
+// ---------------------------------------------------------------------------
+// ExamPilot Prisma schema
+//
+// Design notes
+// - Every user-owned row is reachable from User through an unbroken chain of
+//   relations, so authorization can always be enforced server-side.
+// - Study data (items, attempts, sessions) is kept strictly separate from
+//   presentation config (Tracker.viewConfig JSON), so layouts can change
+//   without touching the underlying items.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AssessmentStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum TrackerLayout {
+  TABLE
+  CHECKLIST
+  NOTES_BOARD
+  KANBAN
+}
+
+enum DisplayDensity {
+  COMPACT
+  COMFORTABLE
+  SPACIOUS
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum BookmarkLabel {
+  IMPORTANT
+  DIFFICULT
+  REVISE
+  CONTINUE_LATER
+  CUSTOM
+}
+
+enum BookmarkTargetType {
+  STUDY_ITEM
+  SYLLABUS_TOPIC
+  NOTE
+  MOCK_TEST
+}
+
+enum FieldKey {
+  NAME
+  DESCRIPTION
+  SUBJECT
+  TOPIC
+  SUBTOPIC
+  PRIORITY
+  STATUS
+  PLANNED_START
+  DUE_DATE
+  COMPLETED_AT
+  ESTIMATED_MINUTES
+  ACTUAL_MINUTES
+  ATTEMPTS
+  BOOKMARK
+  MOCK_TEST
+  CUSTOM
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+}
+
+enum ReminderStatus {
+  PENDING
+  DELIVERED
+  SNOOZED
+  DISMISSED
+  MISSED
+}
+
+enum ReminderRecurrence {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum NotificationChannel {
+  IN_APP
+  BROWSER
+}
+
+enum DeliveryStatus {
+  QUEUED
+  DELIVERED
+  FAILED
+}
+
+enum ThemePreference {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  timeZone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  settings    UserSettings?
+  assessments Assessment[]
+  bookmarks   Bookmark[]
+  notes       Note[]
+  sessions    Session[]
+  studySessions StudySession[]
+  mockTests   MockTest[]
+  reminders   Reminder[]
+}
+
+model UserSettings {
+  id              String          @id @default(cuid())
+  userId          String          @unique
+  theme           ThemePreference @default(SYSTEM)
+  defaultTimeZone String          @default("UTC")
+  browserNotificationsEnabled Boolean @default(false)
+  inAppNotificationsEnabled   Boolean @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Refresh-token store. Only a hash of the token is persisted.
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  refreshTokenHash String   @unique
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Assessment {
+  id          String           @id @default(cuid())
+  userId      String
+  name        String
+  category    String?
+  description String?
+  startDate   DateTime?
+  examDate    DateTime?
+  /// IANA time zone used for date math and reminder delivery for this exam.
+  timeZone    String           @default("UTC")
+  status      AssessmentStatus @default(PLANNING)
+  accentColor String?
+  archivedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusNodes  SyllabusNode[]
+  trackers       Tracker[]
+  studyItems     StudyItem[]
+  schedulePref   AssessmentSchedulePreference?
+  notes          Note[]
+  mockTests      MockTest[]
+  studySessions  StudySession[]
+  reminders      Reminder[]
+  customFields   AssessmentCustomField[]
+
+  @@index([userId, status])
+  @@index([userId, archivedAt])
+  @@index([userId, examDate])
+}
+
+/// Per-assessment scheduling preferences. Purely descriptive: nothing here
+/// reschedules a user's tasks automatically.
+model AssessmentSchedulePreference {
+  id                     String   @id @default(cuid())
+  assessmentId           String   @unique
+  /// Informational only - used to render "ahead/behind" hints, never to move tasks.
+  preferredStudyDays     Int[]    @default([])
+  dailyTargetMinutes     Int?
+  trackScheduleAdherence Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
+/// Hierarchical syllabus node: subject -> topic -> subtopic (any depth allowed).
+model SyllabusNode {
+  id           String   @id @default(cuid())
+  assessmentId String
+  parentId     String?
+  title        String
+  description  String?
+  weight       Float?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assessment Assessment       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  parent     SyllabusNode?    @relation("SyllabusTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   SyllabusNode[]   @relation("SyllabusTree")
+  studyItems StudyItem[]
+  notes      Note[]
+  bookmarks  Bookmark[]
+
+  @@index([assessmentId, parentId, sortOrder])
+}
+
+model StudyItem {
+  id             String    @id @default(cuid())
+  assessmentId   String
+  syllabusNodeId String?
+  trackerId      String?
+  name           String
+  description    String?
+  subject        String?
+  topic          String?
+  subtopic       String?
+  priority       Priority  @default(MEDIUM)
+  /// User-controlled dates. The application NEVER rewrites these on its own.
+  plannedStartDate DateTime?
+  dueDate          DateTime?
+  estimatedMinutes Int?
+  /// Derived from sessions, denormalised for fast reads and recomputed
+  /// transactionally whenever sessions change.
+  actualMinutes    Int?
+  completed        Boolean   @default(false)
+  completedAt      DateTime?
+  sortOrder        Int       @default(0)
+  /// Display-only JSON. Never stores the item list itself.
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  assessment   Assessment            @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  syllabusNode SyllabusNode?         @relation(fields: [syllabusNodeId], references: [id], onDelete: SetNull)
+  tracker      Tracker?              @relation(fields: [trackerId], references: [id], onDelete: SetNull)
+  attempts     PracticeAttempt[]
+  sessions     StudySession[]
+  bookmarks    Bookmark[]
+  reminders    Reminder[]
+  notes        Note[]
+  customValues StudyItemCustomValue[]
+
+  @@index([assessmentId, completed])
+  @@index([assessmentId, dueDate])
+  @@index([assessmentId, priority])
+  @@index([trackerId, sortOrder])
+}
+
+/// A custom field definition, scoped to an assessment (shared across trackers).
+model AssessmentCustomField {
+  id           String          @id @default(cuid())
+  assessmentId String
+  key          String
+  label        String
+  type         CustomFieldType
+  options      String[]        @default([])
+  required     Boolean         @default(false)
+  sortOrder    Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  assessment Assessment            @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  values     StudyItemCustomValue[]
+
+  @@unique([assessmentId, key])
+  @@index([assessmentId, sortOrder])
+}
+
+model StudyItemCustomValue {
+  id            String   @id @default(cuid())
+  studyItemId   String
+  customFieldId String
+  value         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  studyItem   StudyItem             @relation(fields: [studyItemId], references: [id], onDelete: Cascade)
+  customField AssessmentCustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([studyItemId, customFieldId])
+  @@index([customFieldId])
+}
+
+model Tracker {
+  id           String         @id @default(cuid())
+  assessmentId String
+  name         String
+  /// Layouts are interchangeable: they all render the same StudyItem rows.
+  layout       TrackerLayout  @default(TABLE)
+  accentColor  String?
+  density      DisplayDensity @default(COMFORTABLE)
+  /// Presentation configuration only (attempt slot count, visible fields...).
+  viewConfig   Json?
+  isDefault    Boolean        @default(false)
+  sortOrder    Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  assessment Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studyItems StudyItem[]
+  columns    TrackerColumn[]
+  views      TrackerView[]
+
+  @@index([assessmentId, sortOrder])
+}
+
+model TrackerColumn {
+  id            String   @id @default(cuid())
+  trackerId     String
+  fieldKey      FieldKey
+  customFieldId String?
+  label         String?
+  width         Int?
+  visible       Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  options       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tracker Tracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@index([trackerId, sortOrder])
+}
+
+/// A saved view configuration (filters, sort, search, density, layout).
+model TrackerView {
+  id         String          @id @default(cuid())
+  trackerId  String
+  name       String
+  isDefault  Boolean         @default(false)
+  layout     TrackerLayout?
+  density    DisplayDensity?
+  filters    Json?
+  sorts      Json?
+  searchTerm String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tracker Tracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@index([trackerId])
+}
+
+/// One practice attempt record. Attempt SLOTS are configurable per tracker and
+/// stored in Tracker.viewConfig; this table stores the recorded attempts.
+model PracticeAttempt {
+  id                 String   @id @default(cuid())
+  studyItemId        String
+  slotIndex          Int      @default(0)
+  attemptedAt        DateTime
+  questionsAttempted Int?
+  questionsCorrect   Int?
+  marksObtained      Float?
+  maxMarks           Float?
+  durationMinutes    Int?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  studyItem StudyItem @relation(fields: [studyItemId], references: [id], onDelete: Cascade)
+
+  @@index([studyItemId, slotIndex])
+  @@index([attemptedAt])
+}
+
+model StudySession {
+  id            String   @id @default(cuid())
+  userId        String
+  assessmentId  String
+  studyItemId   String?
+  startedAt     DateTime
+  endedAt       DateTime?
+  /// Manually entered duration, used when start/end are not both present.
+  manualMinutes Int?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studyItem  StudyItem? @relation(fields: [studyItemId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([assessmentId, startedAt])
+  @@index([studyItemId])
+}
+
+model Bookmark {
+  id             String             @id @default(cuid())
+  userId         String
+  targetType     BookmarkTargetType
+  /// Exactly one of the optional FKs below is set, matching targetType.
+  studyItemId    String?
+  syllabusNodeId String?
+  noteId         String?
+  mockTestId     String?
+  label          BookmarkLabel      @default(IMPORTANT)
+  customLabel    String?
+  reason         String?
+  createdAt      DateTime           @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studyItem    StudyItem?    @relation(fields: [studyItemId], references: [id], onDelete: Cascade)
+  note         Note?         @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  mockTest     MockTest?     @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+  syllabusNode SyllabusNode? @relation(fields: [syllabusNodeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, targetType])
+  @@index([userId, label])
+  @@index([studyItemId])
+}
+
+model Note {
+  id             String   @id @default(cuid())
+  userId         String
+  assessmentId   String
+  studyItemId    String?
+  syllabusNodeId String?
+  title          String
+  body           String   @db.Text
+  pinned         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment   Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studyItem    StudyItem?    @relation(fields: [studyItemId], references: [id], onDelete: SetNull)
+  syllabusNode SyllabusNode? @relation(fields: [syllabusNodeId], references: [id], onDelete: SetNull)
+  bookmarks    Bookmark[]
+
+  @@index([userId, assessmentId])
+  @@index([studyItemId])
+}
+
+model MockTest {
+  id              String   @id @default(cuid())
+  userId          String
+  assessmentId    String
+  name            String
+  takenOn         DateTime
+  totalMarks      Float
+  marksObtained   Float
+  durationMinutes Int?
+  /// Optional section-wise breakdown: [{ name, totalMarks, marksObtained }]
+  sections        Json?
+  notes           String?
+  reviewed        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  bookmarks  Bookmark[]
+
+  @@index([userId, assessmentId, takenOn])
+}
+
+/// Reminders are always created explicitly by the user. Nothing in the system
+/// auto-creates one (not on import, on deadline set, or on a miss).
+model Reminder {
+  id             String             @id @default(cuid())
+  userId         String
+  assessmentId   String
+  studyItemId    String?
+  title          String
+  message        String?
+  /// Absolute instant, computed from localDateTime + timeZone.
+  remindAt       DateTime
+  /// Wall-clock intent, kept so DST/time-zone changes stay explainable.
+  localDateTime  DateTime?
+  timeZone       String             @default("UTC")
+  advanceMinutes Int?
+  recurrence     ReminderRecurrence @default(NONE)
+  status         ReminderStatus     @default(PENDING)
+  enabled        Boolean            @default(true)
+  snoozedUntil   DateTime?
+  dismissedAt    DateTime?
+  lastFiredAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studyItem  StudyItem? @relation(fields: [studyItemId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@index([userId, status, remindAt])
+  @@index([enabled, status, remindAt])
+  @@index([assessmentId])
+}
+
+/// One row per channel per reminder occurrence. The unique constraint is what
+/// prevents duplicate notifications for the same reminder + occurrence.
+model NotificationDelivery {
+  id            String            @id @default(cuid())
+  reminderId    String
+  userId        String
+  channel       NotificationChannel
+  status        DeliveryStatus    @default(QUEUED)
+  /// Stable key for the occurrence, e.g. the ISO instant of that occurrence.
+  occurrenceKey String
+  scheduledFor  DateTime
+  deliveredAt   DateTime?
+  error         String?
+  createdAt     DateTime          @default(now())
+
+  reminder Reminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@unique([reminderId, channel, occurrenceKey])
+  @@index([userId, status])
+  @@index([scheduledFor])
+}

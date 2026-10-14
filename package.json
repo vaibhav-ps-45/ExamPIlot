@@ -1,0 +1,23 @@
+{
+  "name": "exampilot",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.16.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=20.11.0" },
+  "scripts": {
+    "build": "npm run build -w @exampilot/shared && npm run build -w @exampilot/api && npm run build -w @exampilot/web",
+    "dev": "npm run dev -w @exampilot/api & npm run dev -w @exampilot/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run prisma:migrate -w @exampilot/api",
+    "db:seed": "npm run prisma:seed -w @exampilot/api",
+    "db:studio": "npm run prisma:studio -w @exampilot/api"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}
