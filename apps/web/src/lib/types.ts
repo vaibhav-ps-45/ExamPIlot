@@ -102,6 +102,7 @@ export interface StudyItem {
   trackedMinutes: number;
   attemptCount: number;
   isBookmarked: boolean;
+  bookmarkId: string | null;
   customValues: CustomValue[];
 }
 

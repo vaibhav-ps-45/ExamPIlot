@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useIsDesktop } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
 import type { Assessment } from '@/lib/types';
+import { ReminderNotifier } from '@/components/reminders/notifier';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 
@@ -70,6 +71,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
 
   return (
     <AssessmentContext.Provider value={value}>
+      <ReminderNotifier />
       <div className="flex min-h-screen bg-background">
         {/* Skip link: the first tab stop, so keyboard users can bypass navigation. */}
         <a

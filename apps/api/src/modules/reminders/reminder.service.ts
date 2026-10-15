@@ -2,7 +2,7 @@ import type { CreateReminderInput, ReminderActionInput, UpdateReminderInput } fr
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { toSkipTake } from '../../lib/pagination.js';
-import { addDaysInZone, fromZonedTime, toZonedTime } from '../../lib/dates.js';
+import { addDaysInZone, addMonthsInZone, fromZonedTime, toZonedTime } from '../../lib/dates.js';
 import { getAssessmentForUser } from '../assessments/assessment.service.js';
 import { logger } from '../../lib/logger.js';
 
@@ -23,10 +23,84 @@ export interface ReminderView {
   dismissedAt: string | null;
   lastFiredAt: string | null;
   createdAt: string;
-  /** Derived: true when the reminder is pending but its time has passed. */
+  /** Derived: its notify time passed beyond the delivery window without being delivered. */
   isMissed: boolean;
   deliveries: Array<{ channel: string; status: string; scheduledFor: string; deliveredAt: string | null }>;
 }
+
+/**
+ * How late a reminder may still be delivered. Past this it is MISSED: shown to
+ * the user, never delivered late, never moved, never turned into a new reminder.
+ */
+export const MISSED_AFTER_MS = 30 * 60 * 1000;
+
+export type ReminderRecurrence = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+interface Schedulable {
+  remindAt: Date;
+  advanceMinutes: number | null;
+  status: string;
+  snoozedUntil: Date | null;
+}
+
+/**
+ * The instant a reminder should actually notify. `remindAt` is the moment the
+ * user cares about; an advance notice fires that many minutes earlier. A snooze
+ * replaces the schedule until it ends, so it ignores the advance.
+ */
+export const notifyAtFor = (reminder: Schedulable): Date => {
+  if (reminder.status === 'SNOOZED' && reminder.snoozedUntil) return reminder.snoozedUntil;
+  return new Date(reminder.remindAt.getTime() - (reminder.advanceMinutes ?? 0) * 60_000);
+};
+
+/** FIRE: deliver now. WAIT: not yet. MISSED: too late to deliver. */
+export const classifyReminder = (
+  reminder: Schedulable,
+  now: Date,
+  missedAfterMs: number = MISSED_AFTER_MS,
+): 'FIRE' | 'WAIT' | 'MISSED' => {
+  const at = notifyAtFor(reminder).getTime();
+  if (at > now.getTime()) return 'WAIT';
+  return now.getTime() - at > missedAfterMs ? 'MISSED' : 'FIRE';
+};
+
+/** The occurrence a delivery is recorded against; a snooze is its own occurrence. */
+export const occurrenceTimeFor = (reminder: Schedulable): Date =>
+  reminder.status === 'SNOOZED' && reminder.snoozedUntil ? reminder.snoozedUntil : reminder.remindAt;
+
+const stepRecurrence = (at: Date, recurrence: ReminderRecurrence, timeZone: string): Date => {
+  switch (recurrence) {
+    case 'DAILY':
+      return addDaysInZone(at, 1, timeZone);
+    case 'WEEKLY':
+      return addDaysInZone(at, 7, timeZone);
+    case 'MONTHLY':
+      return addMonthsInZone(at, 1, timeZone);
+    default:
+      return at;
+  }
+};
+
+/**
+ * First occurrence of a recurring reminder whose notify time is still ahead of
+ * (or within the delivery window of) `now`. Occurrences skipped in between are
+ * not delivered: a restart after an outage must not burst stale notifications.
+ */
+export const nextOccurrence = (
+  reminder: { remindAt: Date; advanceMinutes: number | null; recurrence: ReminderRecurrence; timeZone: string },
+  now: Date,
+  missedAfterMs: number = MISSED_AFTER_MS,
+): Date => {
+  let next = stepRecurrence(reminder.remindAt, reminder.recurrence, reminder.timeZone);
+  for (let guard = 0; guard < 5000; guard += 1) {
+    const notifyAt = next.getTime() - (reminder.advanceMinutes ?? 0) * 60_000;
+    if (notifyAt >= now.getTime() - missedAfterMs && next.getTime() > reminder.remindAt.getTime()) return next;
+    const after = stepRecurrence(next, reminder.recurrence, reminder.timeZone);
+    if (after.getTime() <= next.getTime()) return next;
+    next = after;
+  }
+  return next;
+};
 
 const REMINDER_SELECT = {
   id: true,
@@ -92,10 +166,19 @@ const toView = (
   createdAt: row.createdAt.toISOString(),
   // Display only. A missed reminder is NEVER auto-rescheduled or duplicated.
   isMissed:
-    row.enabled &&
-    row.status === 'PENDING' &&
-    row.remindAt.getTime() < now.getTime() &&
-    !row.dismissedAt,
+    row.status === 'MISSED' ||
+    (row.enabled &&
+      (row.status === 'PENDING' || row.status === 'SNOOZED') &&
+      !row.dismissedAt &&
+      classifyReminder(
+        {
+          remindAt: row.remindAt,
+          advanceMinutes: row.advanceMinutes,
+          status: row.status,
+          snoozedUntil: row.snoozedUntil,
+        },
+        now,
+      ) === 'MISSED'),
   deliveries: row.deliveries.map((delivery) => ({
     channel: delivery.channel,
     status: delivery.status,
@@ -233,6 +316,13 @@ export const updateReminder = async (
   });
   if (!current || current.userId !== userId) throw AppError.notFound('Reminder');
 
+  const scheduleEdited =
+    input.remindAt !== undefined ||
+    Boolean(input.localDateTime) ||
+    input.timeZone !== undefined ||
+    input.recurrence !== undefined ||
+    'advanceMinutes' in input;
+
   const timeZone = input.timeZone ?? current.timeZone;
   const nextRemindAt =
     input.remindAt ?? (input.localDateTime
@@ -250,10 +340,10 @@ export const updateReminder = async (
       ...('advanceMinutes' in input ? { advanceMinutes: input.advanceMinutes ?? null } : {}),
       ...(input.recurrence !== undefined ? { recurrence: input.recurrence } : {}),
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-      // Editing a reminder returns it to pending; the user's own action, not automation.
-      status: 'PENDING',
-      dismissedAt: null,
-      snoozedUntil: null,
+      // Only a change to WHEN it fires re-arms the reminder. Renaming it or
+      // pausing it must not resurrect a delivered or dismissed one, because that
+      // would send the same notification a second time.
+      ...(scheduleEdited ? { status: 'PENDING', dismissedAt: null, snoozedUntil: null } : {}),
     },
     select: REMINDER_SELECT,
   });
@@ -283,9 +373,9 @@ export const reminderAction = async (
       where: { id: reminderId },
       data: {
         status: 'SNOOZED',
+        // The original time is kept for display and history; the snooze is its
+        // own delivery occurrence. It never spawns a second reminder.
         snoozedUntil: until,
-        remindAt: until,
-        // A snooze is a user action; it never spawns a second reminder.
         dismissedAt: null,
       },
       select: REMINDER_SELECT,
@@ -342,38 +432,83 @@ export interface DueReminder {
   remindAt: Date;
   timeZone: string;
   advanceMinutes: number | null;
-  recurrence: string;
+  recurrence: ReminderRecurrence;
+  status: string;
+  snoozedUntil: Date | null;
 }
 
+const DUE_SELECT = {
+  id: true,
+  userId: true,
+  assessmentId: true,
+  title: true,
+  message: true,
+  remindAt: true,
+  timeZone: true,
+  advanceMinutes: true,
+  recurrence: true,
+  status: true,
+  snoozedUntil: true,
+} as const;
+
+/** Longest advance notice the API accepts (14 days), so candidate selection can be bounded. */
+const MAX_ADVANCE_MS = 14 * 24 * 60 * 60 * 1000;
+
 /**
- * Finds reminders that are due and not yet delivered for this occurrence.
- * Read-only: it does not change any task or date.
+ * Enabled reminders whose notify time is now and still inside the delivery
+ * window. Read-only: it does not change any task or date. Reminders past the
+ * window are handled by expireMissedReminders, never delivered late.
  */
 export const findDueReminders = async (now: Date = new Date(), limit = 100): Promise<DueReminder[]> => {
-  return prisma.reminder.findMany({
+  const candidates = (await prisma.reminder.findMany({
     where: {
       enabled: true,
       status: { in: ['PENDING', 'SNOOZED'] },
-      remindAt: { lte: now },
       OR: [
-        { lastFiredAt: null },
-        { lastFiredAt: { lt: now } },
+        { remindAt: { lte: new Date(now.getTime() + MAX_ADVANCE_MS) } },
+        { snoozedUntil: { lte: now } },
       ],
     },
-    select: {
-      id: true,
-      userId: true,
-      assessmentId: true,
-      title: true,
-      message: true,
-      remindAt: true,
-      timeZone: true,
-      advanceMinutes: true,
-      recurrence: true,
+    select: DUE_SELECT,
+    orderBy: { remindAt: 'asc' },
+    take: limit * 5,
+  })) as DueReminder[];
+  return candidates.filter((reminder) => classifyReminder(reminder, now) === 'FIRE').slice(0, limit);
+};
+
+/**
+ * Handles reminders that were not delivered in time (server down, user away).
+ * A one-off reminder becomes MISSED and stays visible so the user decides what
+ * to do. A recurring one skips to its next upcoming occurrence, because the
+ * user asked for that recurrence. Nothing is delivered late, nothing is
+ * duplicated and no task or date is touched.
+ */
+export const expireMissedReminders = async (now: Date = new Date(), limit = 200): Promise<number> => {
+  const candidates = (await prisma.reminder.findMany({
+    where: {
+      enabled: true,
+      status: { in: ['PENDING', 'SNOOZED'] },
+      OR: [{ remindAt: { lt: now } }, { snoozedUntil: { lt: now } }],
     },
+    select: DUE_SELECT,
     orderBy: { remindAt: 'asc' },
     take: limit,
-  });
+  })) as DueReminder[];
+
+  let handled = 0;
+  for (const reminder of candidates) {
+    if (classifyReminder(reminder, now) !== 'MISSED') continue;
+    if (reminder.recurrence === 'NONE') {
+      await prisma.reminder.update({ where: { id: reminder.id }, data: { status: 'MISSED' } });
+    } else {
+      await prisma.reminder.update({
+        where: { id: reminder.id },
+        data: { remindAt: nextOccurrence(reminder, now), status: 'PENDING', snoozedUntil: null },
+      });
+    }
+    handled += 1;
+  }
+  return handled;
 };
 
 /**
@@ -413,34 +548,28 @@ export const recordDelivery = async (
 };
 
 /**
- * Advances a recurring reminder to its next occurrence. A NON-recurring
- * reminder is simply marked delivered. In both cases the associated study item
- * is left exactly as the user set it.
+ * After delivery: a one-off reminder is marked delivered; a recurring one moves
+ * to its next upcoming occurrence. The associated study item is left exactly as
+ * the user set it.
  */
 export const markFired = async (reminder: DueReminder, now: Date = new Date()): Promise<void> => {
   if (reminder.recurrence === 'NONE') {
     await prisma.reminder.update({
       where: { id: reminder.id },
-      data: { status: 'DELIVERED', lastFiredAt: now },
+      data: { status: 'DELIVERED', lastFiredAt: now, snoozedUntil: null },
     });
     return;
   }
-
-  const next = (() => {
-    switch (reminder.recurrence) {
-      case 'DAILY':
-        return addDaysInZone(reminder.remindAt, 1, reminder.timeZone);
-      case 'WEEKLY':
-        return addDaysInZone(reminder.remindAt, 7, reminder.timeZone);
-      case 'MONTHLY':
-        return addDaysInZone(reminder.remindAt, 30, reminder.timeZone);
-      default:
-        return reminder.remindAt;
-    }
-  })();
-
   await prisma.reminder.update({
     where: { id: reminder.id },
-    data: { remindAt: next, status: 'PENDING', lastFiredAt: now },
+    data: {
+      // Snoozing a recurring reminder delays one notification; the series keeps its own schedule.
+      remindAt: reminder.status === 'SNOOZED' && reminder.remindAt.getTime() > now.getTime()
+        ? reminder.remindAt
+        : nextOccurrence(reminder, now),
+      status: 'PENDING',
+      snoozedUntil: null,
+      lastFiredAt: now,
+    },
   });
 };

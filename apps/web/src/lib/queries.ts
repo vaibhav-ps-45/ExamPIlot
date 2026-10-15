@@ -167,8 +167,14 @@ export const useSyllabusMutation = (assessmentId: string) => {
     onSuccess: invalidate,
   });
 
+  const reorder = useMutation({
+    mutationFn: async (input: { parentId: string | null; orderedIds: string[] }) =>
+      (await api.post<{ nodes: SyllabusNode[] }>(`/api/assessments/${assessmentId}/syllabus/reorder`, input)).nodes,
+    onSuccess: invalidate,
+  });
+
   const importTemplate = useMutation({
-    mutationFn: async (input: { templateId: string; createStudyItems: boolean }) =>
+    mutationFn: async (input: { templateId: string; createStudyItems: boolean; trackerId?: string | null }) =>
       api.post<{ importedNodes: number; importedItems: number }>(
         `/api/assessments/${assessmentId}/syllabus/import-template`,
         input,
@@ -182,7 +188,7 @@ export const useSyllabusMutation = (assessmentId: string) => {
     },
   });
 
-  return { create, update, remove, importTemplate };
+  return { create, update, remove, reorder, importTemplate };
 };
 
 // --------------------------------------------------------------- trackers ----
@@ -401,33 +407,17 @@ export const useStudyItemMutations = (assessmentId: string, itemId?: string) => 
     onSuccess: invalidate,
   });
 
+  /**
+   * Flip an item's bookmark. The item carries its own bookmark id, so removing
+   * never depends on how many bookmarks the user has.
+   */
   const toggleBookmark = useMutation({
-    mutationFn: async ({
-      item,
-      bookmarked,
-    }: {
-      item: StudyItem;
-      bookmarked: boolean;
-    }): Promise<void> => {
-      if (bookmarked) {
-        const existing = await api.get<Paginated<Bookmark>>(
-          `/api/bookmarks${toQueryString({ pageSize: 100 })}`,
-        );
-        const match = existing.items.find((entry) => entry.targetId === item.id && entry.targetType === 'STUDY_ITEM');
-        if (match) {
-          await api.delete(`/api/bookmarks/${match.id}`);
-          return;
-        }
-        await api.post('/api/bookmarks', {
-          targetType: 'STUDY_ITEM',
-          studyItemId: item.id,
-          label: 'IMPORTANT',
-        });
+    mutationFn: async ({ item }: { item: StudyItem; bookmarked?: boolean }): Promise<void> => {
+      if (item.bookmarkId) {
+        await api.delete(`/api/bookmarks/${item.bookmarkId}`);
         return;
       }
-      const existing = await api.get<Paginated<Bookmark>>(`/api/bookmarks${toQueryString({ pageSize: 100 })}`);
-      const match = existing.items.find((entry) => entry.targetId === item.id && entry.targetType === 'STUDY_ITEM');
-      if (match) await api.delete(`/api/bookmarks/${match.id}`);
+      await api.post('/api/bookmarks', { targetType: 'STUDY_ITEM', studyItemId: item.id, label: 'IMPORTANT' });
     },
     onSuccess: invalidate,
   });
@@ -687,7 +677,13 @@ export const useReminderMutations = (assessmentId?: string) => {
     onSuccess: invalidate,
   });
 
-  return { create, update, action, remove };
+  /** Switches every reminder off. There is intentionally no bulk "on". */
+  const disableAll = useMutation({
+    mutationFn: async () => api.post<{ updated: number }>('/api/reminders/disable-all', {}),
+    onSuccess: invalidate,
+  });
+
+  return { create, update, action, remove, disableAll };
 };
 
 // -------------------------------------------------------------- analytics ----

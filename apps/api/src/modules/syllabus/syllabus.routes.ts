@@ -77,6 +77,7 @@ syllabusRouter.post(
       req.params.assessmentId!,
       req.body.templateId,
       req.body.createStudyItems,
+      req.body.trackerId,
     );
     const nodes = await service.listSyllabus(req.auth!.userId, req.params.assessmentId!);
     res.status(201).json({ ...result, nodes });

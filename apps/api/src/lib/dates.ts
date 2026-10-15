@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, startOfDay } from 'date-fns';
+import { addDays, addMonths, differenceInCalendarDays, startOfDay } from 'date-fns';
 import { formatInTimeZone, fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 export { formatInTimeZone, fromZonedTime, toZonedTime };
@@ -29,4 +29,10 @@ export const daysUntil = (target: Date, timeZone: string, now: Date = new Date()
 export const addDaysInZone = (instant: Date, days: number, timeZone: string): Date => {
   const zoned = toZonedTime(instant, timeZone);
   return fromZonedTime(addDays(zoned, days), timeZone);
+};
+
+/** Same wall-clock time N calendar months later (clamped to month end), in the given zone. */
+export const addMonthsInZone = (instant: Date, months: number, timeZone: string): Date => {
+  const zoned = toZonedTime(instant, timeZone);
+  return fromZonedTime(addMonths(zoned, months), timeZone);
 };

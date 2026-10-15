@@ -18,7 +18,15 @@ export {
   IMPLEMENTED_LAYOUTS,
 } from '@exampilot/shared';
 
-export { buildTree } from '../modules/syllabus/syllabus.service.js';
+export { buildTree, subjectForPath } from '../modules/syllabus/syllabus.service.js';
 export { deriveDateStatus, sessionMinutes } from '../modules/studyItems/studyItem.service.js';
-export { resolveRemindAt, occurrenceKeyFor } from '../modules/reminders/reminder.service.js';
+export {
+  resolveRemindAt,
+  occurrenceKeyFor,
+  occurrenceTimeFor,
+  notifyAtFor,
+  classifyReminder,
+  nextOccurrence,
+  MISSED_AFTER_MS,
+} from '../modules/reminders/reminder.service.js';
 export { calendarDaysBetween, daysUntil } from '../lib/dates.js';

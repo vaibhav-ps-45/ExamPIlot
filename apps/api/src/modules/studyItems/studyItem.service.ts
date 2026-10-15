@@ -34,6 +34,8 @@ export interface StudyItemView {
   trackedMinutes: number;
   attemptCount: number;
   isBookmarked: boolean;
+  /** Id of this item's bookmark, so clients can remove it without searching the list. */
+  bookmarkId: string | null;
   customValues: Array<{ customFieldId: string; key: string; label: string; value: string | null }>;
 }
 
@@ -57,6 +59,7 @@ const ITEM_SELECT = {
   sortOrder: true,
   createdAt: true,
   updatedAt: true,
+  bookmarks: { select: { id: true }, take: 1 },
   _count: { select: { attempts: true, bookmarks: true } },
   customValues: {
     select: {
@@ -132,6 +135,7 @@ const toView = (
     trackedMinutes: row.trackedMinutes ?? row.actualMinutes ?? 0,
     attemptCount: row._count.attempts,
     isBookmarked: row._count.bookmarks > 0,
+    bookmarkId: row.bookmarks[0]?.id ?? null,
     customValues: row.customValues.map((value) => ({
       customFieldId: value.customFieldId,
       key: value.customField.key,

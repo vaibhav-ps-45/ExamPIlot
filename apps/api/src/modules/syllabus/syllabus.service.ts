@@ -230,6 +230,14 @@ export const reorderSyllabus = async (
   return listSyllabus(userId, assessmentId);
 };
 
+/**
+ * Study items made from a syllabus leaf take the nearest parent as their
+ * subject, so imported items can be filtered and grouped by subject straight
+ * away. Top-level leaves have no parent and therefore no subject.
+ */
+export const subjectForPath = (ancestors: string[]): string | null =>
+  ancestors.length > 0 ? ancestors[ancestors.length - 1]! : null;
+
 export const listTemplates = () => [
   {
     id: GATE_CS_TEMPLATE.id,
@@ -243,15 +251,25 @@ export const listTemplates = () => [
  * Explicit, user-triggered template import. It creates syllabus nodes only.
  * It NEVER creates reminders, due dates or study items unless the caller asks
  * for study items explicitly (createStudyItems: true), and even then those
- * items are created with no dates and no reminders.
+ * items are created with no dates and no reminders. Items can optionally be
+ * placed in one of the user's own trackers.
  */
 export const importTemplate = async (
   userId: string,
   assessmentId: string,
   templateId: string,
   createStudyItems: boolean,
+  trackerId: string | null = null,
 ): Promise<{ importedNodes: number; importedItems: number }> => {
   await getAssessmentForUser(userId, assessmentId);
+
+  if (createStudyItems && trackerId) {
+    const tracker = await prisma.tracker.findUnique({ where: { id: trackerId }, select: { assessmentId: true } });
+    if (!tracker || tracker.assessmentId !== assessmentId) throw AppError.notFound('Tracker');
+  }
+  // Continue manual ordering after whatever is already in the tracker.
+  const existingInTracker =
+    createStudyItems && trackerId ? await prisma.studyItem.count({ where: { assessmentId, trackerId } }) : 0;
 
   const template = GATE_CS_TEMPLATE.id === templateId ? GATE_CS_TEMPLATE : null;
   if (!template) throw AppError.notFound('Syllabus template');
@@ -260,7 +278,11 @@ export const importTemplate = async (
   let importedItems = 0;
 
   await prisma.$transaction(async (tx) => {
-    const insert = async (nodes: typeof template.nodes, parentId: string | null): Promise<void> => {
+    const insert = async (
+      nodes: typeof template.nodes,
+      parentId: string | null,
+      ancestors: string[],
+    ): Promise<void> => {
       for (const [index, node] of nodes.entries()) {
         const created = await tx.syllabusNode.create({
           data: {
@@ -279,20 +301,22 @@ export const importTemplate = async (
             data: {
               assessmentId,
               syllabusNodeId: created.id,
+              trackerId: trackerId ?? null,
               name: node.title,
-              subject: null,
+              subject: subjectForPath(ancestors),
               topic: null,
               subtopic: null,
+              sortOrder: existingInTracker + importedItems,
               // No dates, no reminders: the user schedules their own work.
             },
           });
           importedItems += 1;
         }
 
-        if (node.children?.length) await insert(node.children, created.id);
+        if (node.children?.length) await insert(node.children, created.id, [...ancestors, node.title]);
       }
     };
-    await insert(template.nodes, null);
+    await insert(template.nodes, null, []);
   });
 
   return { importedNodes, importedItems };

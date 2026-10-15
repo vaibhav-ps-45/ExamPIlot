@@ -71,6 +71,7 @@ const makeItem = (over: Partial<StudyItem>): StudyItem => ({
   trackedMinutes: 45,
   attemptCount: 2,
   isBookmarked: false,
+  bookmarkId: null,
   customValues: [],
   ...over,
 });

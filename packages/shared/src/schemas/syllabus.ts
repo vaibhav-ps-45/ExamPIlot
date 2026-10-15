@@ -46,6 +46,8 @@ export const syllabusTemplateNodeSchema: z.ZodType<{
 export const importSyllabusTemplateSchema = z.object({
   templateId: z.string().min(1).max(64),
   createStudyItems: z.boolean().default(false),
+  /** Optional: put the created study items into this tracker. Ignored unless createStudyItems is true. */
+  trackerId: z.string().min(1).nullish().transform((v) => v ?? null),
 });
 export type ImportSyllabusTemplateInput = z.infer<typeof importSyllabusTemplateSchema>;
 

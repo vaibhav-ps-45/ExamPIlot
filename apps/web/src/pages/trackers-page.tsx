@@ -235,7 +235,17 @@ const TrackerWorkspace = ({
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [formState, setFormState] = useState<{ open: boolean; item: StudyItem | null }>({ open: false, item: null });
-  const [detailId, setDetailId] = useState<string | null>(null);
+  // Saved for Later links here with ?item=<id>; open that item's details.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [detailId, setDetailId] = useState<string | null>(() => searchParams.get('item'));
+  const closeDetail = () => {
+    setDetailId(null);
+    if (searchParams.has('item')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('item');
+      setSearchParams(next, { replace: true });
+    }
+  };
   const [deletingItem, setDeletingItem] = useState<StudyItem | null>(null);
   const [deletingTracker, setDeletingTracker] = useState(false);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
@@ -308,7 +318,7 @@ const TrackerWorkspace = ({
     onToggleComplete: (item) =>
       void guard(item.id, () => toggleComplete.mutateAsync({ id: item.id, completed: !item.completed }), 'Could not update the item'),
     onToggleBookmark: (item) =>
-      void guard(item.id, () => toggleBookmark.mutateAsync({ item, bookmarked: !item.isBookmarked }), 'Could not update the bookmark'),
+      void guard(item.id, () => toggleBookmark.mutateAsync({ item }), 'Could not update the bookmark'),
     onOpen: (item) => setDetailId(item.id),
     onEdit: (item) => setFormState({ open: true, item }),
     onDelete: (item) => setDeletingItem(item),
@@ -615,7 +625,7 @@ const TrackerWorkspace = ({
         itemId={detailId}
         timeZone={timeZone}
         attemptSlots={tracker.viewConfig.attemptSlots}
-        onOpenChange={(open) => !open && setDetailId(null)}
+        onOpenChange={(open) => !open && closeDetail()}
         onEdit={(item) => {
           setDetailId(null);
           setFormState({ open: true, item });

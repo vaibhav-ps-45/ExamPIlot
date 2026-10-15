@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTree,
+  subjectForPath,
+  classifyReminder,
+  nextOccurrence,
+  notifyAtFor,
+  occurrenceTimeFor,
+  MISSED_AFTER_MS,
   calendarDaysBetween,
   daysUntil,
   sessionMinutes,
@@ -448,5 +454,67 @@ describe('partial update schemas', () => {
     expect(Object.keys(shared.updateReminderSchema.parse({ enabled: false }))).toEqual(['enabled']);
     expect(Object.keys(shared.updateStudySessionSchema.parse({ manualMinutes: 5 }))).toEqual(['manualMinutes']);
     expect(Object.keys(shared.updateSyllabusNodeSchema.parse({ title: 'x' }))).toEqual(['title']);
+  });
+});
+
+describe('template import subjects', () => {
+  it('uses the nearest parent as the subject of an imported item', () => {
+    expect(subjectForPath(['Engineering Mathematics', 'Discrete Mathematics'])).toBe('Discrete Mathematics');
+    expect(subjectForPath(['Algorithms'])).toBe('Algorithms');
+  });
+
+  it('gives top-level leaves no subject', () => {
+    expect(subjectForPath([])).toBeNull();
+  });
+});
+
+describe('reminder scheduling rules', () => {
+  const base = { advanceMinutes: null as number | null, status: 'PENDING', snoozedUntil: null as Date | null };
+  const at = new Date('2026-10-20T09:00:00.000Z');
+  const minutes = (n: number) => new Date(at.getTime() + n * 60_000);
+
+  it('waits until the reminder time, then fires inside the delivery window', () => {
+    expect(classifyReminder({ ...base, remindAt: at }, minutes(-1))).toBe('WAIT');
+    expect(classifyReminder({ ...base, remindAt: at }, minutes(0))).toBe('FIRE');
+    expect(classifyReminder({ ...base, remindAt: at }, minutes(29))).toBe('FIRE');
+  });
+
+  it('never delivers late: past the window it is MISSED', () => {
+    expect(MISSED_AFTER_MS).toBe(30 * 60 * 1000);
+    expect(classifyReminder({ ...base, remindAt: at }, minutes(31))).toBe('MISSED');
+    expect(classifyReminder({ ...base, remindAt: at }, new Date('2026-10-25T09:00:00.000Z'))).toBe('MISSED');
+  });
+
+  it('applies an advance notice by notifying earlier than the event time', () => {
+    const withAdvance = { ...base, remindAt: at, advanceMinutes: 60 };
+    expect(notifyAtFor(withAdvance).toISOString()).toBe('2026-10-20T08:00:00.000Z');
+    expect(classifyReminder(withAdvance, minutes(-61))).toBe('WAIT');
+    expect(classifyReminder(withAdvance, minutes(-60))).toBe('FIRE');
+  });
+
+  it('treats a snooze as its own occurrence and ignores the advance', () => {
+    const snoozedUntil = minutes(10);
+    const snoozed = { remindAt: at, advanceMinutes: 120, status: 'SNOOZED', snoozedUntil };
+    expect(notifyAtFor(snoozed).toISOString()).toBe(snoozedUntil.toISOString());
+    expect(occurrenceTimeFor(snoozed).toISOString()).toBe(snoozedUntil.toISOString());
+    expect(occurrenceTimeFor({ ...base, remindAt: at }).toISOString()).toBe(at.toISOString());
+    expect(classifyReminder(snoozed, minutes(5))).toBe('WAIT');
+    expect(classifyReminder(snoozed, minutes(11))).toBe('FIRE');
+  });
+
+  it('skips stale occurrences of a recurring reminder instead of bursting them', () => {
+    const daily = { remindAt: at, advanceMinutes: null, recurrence: 'DAILY' as const, timeZone: 'UTC' };
+    // Server was down for 3 days: the next one is tomorrow's, not a backlog.
+    const now = new Date('2026-10-23T12:00:00.000Z');
+    expect(nextOccurrence(daily, now).toISOString()).toBe('2026-10-24T09:00:00.000Z');
+  });
+
+  it('keeps wall-clock time across a DST change and uses calendar months', () => {
+    // 29 Oct 23:30 in New York (EDT). DST ends on 1 Nov, so a week later the same
+    // wall-clock time is 23:30 EST, which is one hour later in UTC.
+    const weekly = { remindAt: new Date('2026-10-30T03:30:00.000Z'), advanceMinutes: null, recurrence: 'WEEKLY' as const, timeZone: 'America/New_York' };
+    expect(nextOccurrence(weekly, new Date('2026-10-30T04:00:00.000Z')).toISOString()).toBe('2026-11-06T04:30:00.000Z');
+    const monthly = { remindAt: new Date('2026-01-15T09:00:00.000Z'), advanceMinutes: null, recurrence: 'MONTHLY' as const, timeZone: 'UTC' };
+    expect(nextOccurrence(monthly, new Date('2026-01-15T10:00:00.000Z')).toISOString()).toBe('2026-02-15T09:00:00.000Z');
   });
 });

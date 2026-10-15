@@ -22,6 +22,19 @@ reminderRouter.get(
   }),
 );
 
+/**
+ * Kill switch: turns every reminder off. There is deliberately no bulk "turn on":
+ * it could re-enable reminders the user had switched off one by one, which would
+ * be an automatic opt-in. Reminders are re-enabled individually, by the user.
+ */
+reminderRouter.post(
+  '/disable-all',
+  asyncHandler(async (req, res) => {
+    const updated = await service.toggleReminders(req.auth!.userId, false);
+    res.json({ updated });
+  }),
+);
+
 reminderRouter.patch(
   '/:reminderId',
   validate(updateReminderSchema),

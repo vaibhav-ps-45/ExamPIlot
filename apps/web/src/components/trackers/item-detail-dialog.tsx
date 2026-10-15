@@ -3,16 +3,17 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { CalendarClock, Plus, Trash2 } from 'lucide-react';
+import { AlarmClock, CalendarClock, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input, NativeSelect, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingState } from '@/components/ui/states';
+import { ReminderFormDialog } from '@/components/reminders/reminder-form-dialog';
 import { ApiError } from '@/lib/api';
 import { fromZonedInputValue, formatDate, formatMinutes, toDateInputValue } from '@/lib/format';
-import { useStudyItem, useStudyItemMutations } from '@/lib/queries';
+import { useAssessments, useStudyItem, useStudyItemMutations } from '@/lib/queries';
 import type { PracticeAttempt, StudyItem } from '@/lib/types';
 import { PriorityBadge, StatusBadge } from './shared';
 
@@ -277,6 +278,8 @@ export const ItemDetailDialog = ({
   const [recordingSlot, setRecordingSlot] = useState<number | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
   const [deleting, setDeleting] = useState<PracticeAttempt | null>(null);
+  const [remindOpen, setRemindOpen] = useState(false);
+  const assessments = useAssessments();
 
   const item = itemQuery.data;
   const attempts = attemptsQuery.data ?? [];
@@ -353,6 +356,15 @@ export const ItemDetailDialog = ({
               {item.completed && <p className="text-xs text-muted-foreground">Completed items keep their original dates.</p>}
             </section>
 
+            <section className="space-y-1.5" aria-label="Reminder">
+              <Button variant="outline" size="sm" onClick={() => setRemindOpen(true)}>
+                <AlarmClock /> Remind me about this
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                There is no reminder unless you add one, and a due date never creates one.
+              </p>
+            </section>
+
             <section className="space-y-2" aria-label="Practice attempts">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">{`Practice attempts (${attempts.length})`}</h3>
@@ -407,6 +419,15 @@ export const ItemDetailDialog = ({
               </Button>
               <Button onClick={() => onOpenChange(false)}>Close</Button>
             </DialogFooter>
+
+            <ReminderFormDialog
+              open={remindOpen}
+              onOpenChange={setRemindOpen}
+              assessments={assessments.data ?? []}
+              fixedAssessmentId={assessmentId}
+              reminder={null}
+              defaults={{ studyItemId: item.id, title: `Study: ${item.name}` }}
+            />
 
             <ConfirmDialog
               open={Boolean(deleting)}
