@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoDateTime, optionalString } from './common.js';
+import { isoDateTime, optionalString, optionalStringPatch } from './common.js';
 
 /**
  * A study session. Either provide start+end (duration is derived) or provide
@@ -37,7 +37,7 @@ export const updateStudySessionSchema = z
     startedAt: isoDateTime.nullish(),
     endedAt: isoDateTime.nullish(),
     manualMinutes: z.number().int().min(1).max(60 * 24 * 7).nullish(),
-    notes: optionalString(2000),
+    notes: optionalStringPatch(2000),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' });
 export type UpdateStudySessionInput = z.infer<typeof updateStudySessionSchema>;

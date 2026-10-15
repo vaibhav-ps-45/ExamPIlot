@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoDateTime, optionalString } from './common.js';
+import { isoDateTime, optionalString, optionalStringPatch } from './common.js';
 
 export const mockTestSectionSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -37,7 +37,7 @@ export const updateMockTestSchema = z
     marksObtained: z.number().min(0).max(100000).optional(),
     durationMinutes: z.number().int().min(0).max(60 * 24).nullish(),
     sections: z.array(mockTestSectionSchema).max(30).nullish(),
-    notes: optionalString(4000),
+    notes: optionalStringPatch(4000),
     reviewed: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' });

@@ -421,3 +421,32 @@ describe('validation: mock tests and passwords', () => {
     expect(passwordSchema.safeParse('DemoPassword123!').success).toBe(true);
   });
 });
+
+describe('partial update schemas', () => {
+  // Regression: update schemas used the create helpers, which turn a MISSING key
+  // into null. The service updates every key that is present, so a PATCH that
+  // only ticked a checkbox also wiped description, subject, topic, subtopic and
+  // both planned dates. A missing key must stay missing.
+  it('does not null fields the client did not send (study item)', async () => {
+    const { updateStudyItemSchema } = await import('@exampilot/shared');
+    const parsed = updateStudyItemSchema.parse({ completed: true });
+    expect(Object.keys(parsed)).toEqual(['completed']);
+  });
+
+  it('still lets the client clear a field explicitly', async () => {
+    const { updateStudyItemSchema } = await import('@exampilot/shared');
+    const parsed = updateStudyItemSchema.parse({ description: '', dueDate: null });
+    expect(parsed.description).toBeNull();
+    expect(parsed.dueDate).toBeNull();
+  });
+
+  it('keeps every other update schema free of implicit nulls', async () => {
+    const shared = await import('@exampilot/shared');
+    expect(Object.keys(shared.updateAssessmentSchema.parse({ archived: true }))).toEqual(['archived']);
+    expect(Object.keys(shared.updateBookmarkSchema.parse({ label: 'REVISE' }))).toEqual(['label']);
+    expect(Object.keys(shared.updateMockTestSchema.parse({ reviewed: true }))).toEqual(['reviewed']);
+    expect(Object.keys(shared.updateReminderSchema.parse({ enabled: false }))).toEqual(['enabled']);
+    expect(Object.keys(shared.updateStudySessionSchema.parse({ manualMinutes: 5 }))).toEqual(['manualMinutes']);
+    expect(Object.keys(shared.updateSyllabusNodeSchema.parse({ title: 'x' }))).toEqual(['title']);
+  });
+});

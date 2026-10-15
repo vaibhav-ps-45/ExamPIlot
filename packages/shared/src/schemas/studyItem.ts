@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { CUSTOM_FIELD_TYPES, PRIORITIES } from '../constants.js';
-import { isoDateTime, optionalIsoDateTime, optionalString } from './common.js';
+import {
+  isoDateTime,
+  optionalIsoDateTime,
+  optionalIsoDateTimePatch,
+  optionalString,
+  optionalStringPatch,
+} from './common.js';
 
 const customValueInput = z.object({
   customFieldId: z.string().min(1),
@@ -38,19 +44,19 @@ export type CreateStudyItemInput = z.infer<typeof createStudyItemSchema>;
 export const updateStudyItemSchema = z
   .object({
     name: baseItem.name.optional(),
-    description: optionalString(4000),
-    subject: optionalString(200),
-    topic: optionalString(200),
-    subtopic: optionalString(200),
+    description: optionalStringPatch(4000),
+    subject: optionalStringPatch(200),
+    topic: optionalStringPatch(200),
+    subtopic: optionalStringPatch(200),
     priority: z.enum(PRIORITIES).optional(),
-    plannedStartDate: optionalIsoDateTime,
-    dueDate: optionalIsoDateTime,
+    plannedStartDate: optionalIsoDateTimePatch,
+    dueDate: optionalIsoDateTimePatch,
     estimatedMinutes: z.number().int().min(0).max(60 * 24 * 30).nullish(),
     syllabusNodeId: z.string().min(1).nullish(),
     trackerId: z.string().min(1).nullish(),
     completed: z.boolean().optional(),
     /// Only used together with `completed`. Defaults to "now" on the server.
-    completedAt: optionalIsoDateTime,
+    completedAt: optionalIsoDateTimePatch,
     sortOrder: z.number().int().min(0).max(100000).optional(),
     metadata: z.record(z.unknown()).nullish(),
     customValues: z.array(customValueInput).max(64).optional(),

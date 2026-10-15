@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { REMINDER_RECURRENCES, REMINDER_STATUSES } from '../constants.js';
-import { isoDateTime, optionalString, timeZoneSchema } from './common.js';
+import { isoDateTime, optionalString, optionalStringPatch, timeZoneSchema } from './common.js';
 
 /**
  * Reminders exist only because a user created them. Nothing in the API
@@ -28,7 +28,7 @@ export type CreateReminderInput = z.infer<typeof createReminderSchema>;
 export const updateReminderSchema = z
   .object({
     title: z.string().trim().min(1).max(200).optional(),
-    message: optionalString(1000),
+    message: optionalStringPatch(1000),
     remindAt: isoDateTime.optional(),
     localDateTime: isoDateTime.nullish(),
     timeZone: timeZoneSchema.optional(),

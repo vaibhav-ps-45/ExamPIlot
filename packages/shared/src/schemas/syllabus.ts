@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { optionalString } from './common.js';
+import { optionalString, optionalStringPatch } from './common.js';
 
 export const createSyllabusNodeSchema = z.object({
   parentId: z.string().min(1).nullish().transform((v) => v ?? null),
@@ -14,7 +14,7 @@ export const updateSyllabusNodeSchema = z
   .object({
     parentId: z.string().min(1).nullish(),
     title: z.string().trim().min(1).max(300).optional(),
-    description: optionalString(2000),
+    description: optionalStringPatch(2000),
     weight: z.number().min(0).max(1000).nullish(),
     sortOrder: z.number().int().min(0).max(100000).optional(),
   })

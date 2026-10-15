@@ -10,13 +10,12 @@ automation**: the app tracks time automatically, it does not manage your life au
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 — Foundation | Monorepo, auth, PostgreSQL + Prisma, assessment CRUD, syllabus + study items | **Backend complete and verified** |
-| 2 — Core tracking | Tracker builder, table/checklist/notes-board, custom fields, saved views, attempts, sessions | **Backend complete and verified** |
-| 3 — Planning | Live date calculations, manual rescheduling, bookmarks, opt-in reminders | **Backend complete and verified** |
-| 4 — Progress | Mock tests, analytics, dashboard | **Backend complete; UI pending** |
+| 1 - Foundation | Monorepo, auth, PostgreSQL + Prisma, assessment CRUD, syllabus + study items | Backend complete; assessments UI done |
+| 2 - Core tracking | Tracker builder, table/checklist/notes-board, custom fields, saved views, attempts, sessions | **Trackers UI done** (builder, 3 layouts, custom fields, saved views, attempts); Sessions UI pending |
+| 3 - Planning | Live date calculations, manual rescheduling, bookmarks, opt-in reminders | Backend complete; reschedule + bookmark toggle available from trackers; Schedule, Saved and Reminders pages pending |
+| 4 - Progress | Mock tests, analytics, dashboard | Dashboard done; Mock tests page pending |
 
-**The API is finished and verified end to end. The React frontend is not built yet.**
-This is not yet a clickable application — see [Known limitations](#known-limitations).
+**Pages still to build:** Syllabus, Sessions, Schedule, Saved for Later, Reminders, Notes, Mock Tests, Settings.
 
 ---
 

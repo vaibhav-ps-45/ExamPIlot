@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ASSESSMENT_STATUSES } from '../constants.js';
-import { hexColor, optionalIsoDateTime, optionalString, timeZoneSchema } from './common.js';
+import { hexColor, optionalIsoDateTime, optionalIsoDateTimePatch, optionalString, optionalStringPatch, timeZoneSchema } from './common.js';
 
 /**
  * An assessment is the workspace root for everything else. `examDate` is
@@ -34,13 +34,13 @@ export type CreateAssessmentInput = z.infer<typeof createAssessmentSchema>;
 export const updateAssessmentSchema = z
   .object({
     name: baseAssessment.name.optional(),
-    category: optionalString(120),
-    description: optionalString(2000),
-    startDate: optionalIsoDateTime,
-    examDate: optionalIsoDateTime,
+    category: optionalStringPatch(120),
+    description: optionalStringPatch(2000),
+    startDate: optionalIsoDateTimePatch,
+    examDate: optionalIsoDateTimePatch,
     timeZone: timeZoneSchema.optional(),
     status: z.enum(ASSESSMENT_STATUSES).optional(),
-    accentColor: hexColor.nullish().transform((v) => v ?? null),
+    accentColor: hexColor.nullish(),
     archived: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' });

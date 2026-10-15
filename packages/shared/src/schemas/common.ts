@@ -60,3 +60,21 @@ export const listResponse = <T extends z.ZodTypeAny>(item: T) =>
     page: z.number().int(),
     pageSize: z.number().int(),
   });
+
+/**
+ * PATCH-safe variants. The create helpers above turn a MISSING key into `null`,
+ * which is right for create but destructive for a partial update: the server
+ * decides what to change by checking which keys are present, so a PATCH that
+ * only sets `completed` would also null the description, subject and dates.
+ * These keep a missing key missing; an explicit '' or null still clears.
+ */
+export const optionalStringPatch = (max = 2000) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => (v === '' ? null : v))
+    .nullable()
+    .optional();
+
+export const optionalIsoDateTimePatch = z.union([isoDateTime, z.null()]).optional();

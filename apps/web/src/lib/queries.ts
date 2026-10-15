@@ -762,4 +762,39 @@ export const useCustomFields = (assessmentId: string | undefined, options?: Quer
     ...options,
   });
 
+export const useCustomFieldMutations = (assessmentId: string) => {
+  const client = useQueryClient();
+  const invalidate = () => {
+    void client.invalidateQueries({ queryKey: keys.customFields(assessmentId) });
+    void client.invalidateQueries({ queryKey: keys.items(assessmentId) });
+  };
+
+  const create = useMutation({
+    mutationFn: async (input: Record<string, unknown>) =>
+      (await api.post<{ customFields: CustomField[] }>(`/api/assessments/${assessmentId}/custom-fields`, input))
+        .customFields,
+    onSuccess: invalidate,
+  });
+
+  const update = useMutation({
+    mutationFn: async ({ fieldId, ...input }: { fieldId: string } & Record<string, unknown>) =>
+      (await api.patch<{ customFields: CustomField[] }>(
+        `/api/assessments/${assessmentId}/custom-fields/${fieldId}`,
+        input,
+      )).customFields,
+    onSuccess: invalidate,
+  });
+
+  const remove = useMutation({
+    mutationFn: async (fieldId: string) =>
+      api.delete(`/api/assessments/${assessmentId}/custom-fields/${fieldId}`),
+    onSuccess: () => {
+      invalidate();
+      void client.invalidateQueries({ queryKey: keys.trackers(assessmentId) });
+    },
+  });
+
+  return { create, update, remove };
+};
+
 export type { User };

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BOOKMARK_LABELS, BOOKMARK_TARGET_TYPES } from '../constants.js';
-import { optionalString } from './common.js';
+import { optionalString, optionalStringPatch } from './common.js';
 
 /**
  * A bookmark references exactly one target. The API verifies that the target
@@ -41,8 +41,8 @@ export type CreateBookmarkInput = z.infer<typeof createBookmarkSchema>;
 export const updateBookmarkSchema = z
   .object({
     label: z.enum(BOOKMARK_LABELS).optional(),
-    customLabel: optionalString(80),
-    reason: optionalString(500),
+    customLabel: optionalStringPatch(80),
+    reason: optionalStringPatch(500),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' });
 export type UpdateBookmarkInput = z.infer<typeof updateBookmarkSchema>;
