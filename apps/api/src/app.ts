@@ -9,6 +9,7 @@ import { assessmentRouter } from './modules/assessments/assessment.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { analyticsRouter, assessmentAnalyticsRouter } from './modules/analytics/analytics.routes.js';
 import { bookmarkRouter } from './modules/bookmarks/bookmark.routes.js';
+import { customFieldRouter } from './modules/customFields/customField.routes.js';
 import { mockTestRouter } from './modules/mockTests/mockTest.routes.js';
 import { noteRouter } from './modules/notes/note.routes.js';
 import { assessmentReminderRouter, reminderRouter } from './modules/reminders/reminder.routes.js';
@@ -63,6 +64,7 @@ export const createApp = (): Express => {
   app.use('/api/assessments/:assessmentId/sessions', sessionRouter);
   app.use('/api/assessments/:assessmentId/trackers', trackerRouter);
   app.use('/api/assessments/:assessmentId/notes', noteRouter);
+  app.use('/api/assessments/:assessmentId/custom-fields', customFieldRouter);
   app.use('/api/bookmarks', bookmarkRouter);
   app.use('/api/reminders', reminderRouter);
   app.use('/api/settings', settingsRouter);
