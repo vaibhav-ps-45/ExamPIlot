@@ -214,6 +214,7 @@ export interface Note {
   createdAt: string;
   updatedAt: string;
   isBookmarked: boolean;
+  bookmarkId: string | null;
   excerpt: string;
 }
 
@@ -239,6 +240,7 @@ export interface MockTest {
   createdAt: string;
   updatedAt: string;
   isBookmarked: boolean;
+  bookmarkId: string | null;
 }
 
 export interface MockTestSummary {

@@ -27,6 +27,8 @@ export interface MockTestView {
   createdAt: string;
   updatedAt: string;
   isBookmarked: boolean;
+  /** Id of this record's bookmark, so clients can remove it without searching the list. */
+  bookmarkId: string | null;
 }
 
 const MOCK_SELECT = {
@@ -42,6 +44,7 @@ const MOCK_SELECT = {
   reviewed: true,
   createdAt: true,
   updatedAt: true,
+  bookmarks: { select: { id: true }, take: 1 },
   _count: { select: { bookmarks: true } },
 } as const;
 
@@ -61,6 +64,7 @@ const toView = (row: {
   reviewed: boolean;
   createdAt: Date;
   updatedAt: Date;
+  bookmarks: Array<{ id: string }>;
   _count: { bookmarks: number };
 }): MockTestView => ({
   id: row.id,
@@ -77,6 +81,7 @@ const toView = (row: {
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
   isBookmarked: row._count.bookmarks > 0,
+  bookmarkId: row.bookmarks[0]?.id ?? null,
 });
 
 export const listMockTests = async (
@@ -166,6 +171,13 @@ export const updateMockTest = async (
   if (obtained > total) {
     throw AppError.validation('Marks obtained cannot exceed total marks', [
       { path: 'marksObtained', message: 'Exceeds total marks' },
+    ]);
+  }
+
+  const badSection = input.sections?.find((section) => section.marksObtained > section.totalMarks);
+  if (badSection) {
+    throw AppError.validation('A section cannot score more than its total marks', [
+      { path: 'sections', message: `"${badSection.name}" exceeds its total marks` },
     ]);
   }
 

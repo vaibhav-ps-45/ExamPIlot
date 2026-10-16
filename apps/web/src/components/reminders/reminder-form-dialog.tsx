@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input, NativeSelect, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDateTime, fromZonedInputValue, toDateTimeLocalValue } from '@/lib/format';
+import { timeZoneOptions } from '@/lib/timezones';
 import { useReminderMutations, useStudyItems } from '@/lib/queries';
 import type { Assessment, Reminder } from '@/lib/types';
 
@@ -23,11 +24,6 @@ const RECURRENCE_LABEL: Record<ReminderRecurrence, string> = {
   DAILY: 'Every day',
   WEEKLY: 'Every week',
   MONTHLY: 'Every month',
-};
-
-const zoneList = (current: string): string[] => {
-  const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') ?? [];
-  return supported.includes(current) ? supported : [current, ...supported];
 };
 
 /**
@@ -87,7 +83,7 @@ export const ReminderFormDialog = ({
   }, [open, reminder, assessments, fixedAssessmentId, defaults?.studyItemId, defaults?.title]);
 
   const items = useStudyItems(assessmentId || undefined, { pageSize: 100, sort: 'NAME', completed: 'false' }, { enabled: open && Boolean(assessmentId) });
-  const zones = useMemo(() => zoneList(timeZone), [timeZone]);
+  const zones = useMemo(() => timeZoneOptions(timeZone), [timeZone]);
 
   const remindAtIso = fromZonedInputValue(dateTime, timeZone);
   const advanceMinutes = advance === '' ? null : Number(advance);

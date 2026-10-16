@@ -84,14 +84,16 @@ difference computed in the assessment's `timeZone`, and is `null` when there is 
 | PATCH | `/nodes/:nodeId` | Rename, move, or reweight a node. |
 | DELETE | `/nodes/:nodeId` | Delete a subtree. **Study items are detached, never deleted.** |
 | POST | `/reorder` | `{ parentId, orderedIds }`. |
-| POST | `/import-template` | `{ templateId, createStudyItems }`. |
+| POST | `/import-template` | `{ templateId, createStudyItems, trackerId? }`. |
 
 Moving a node validates the parent belongs to the same assessment and walks the ancestor
 chain to reject cycles.
 
 Template import is explicit and side-effect free: it creates syllabus nodes only. With
 `createStudyItems: true` it also creates study items — **with no dates and no reminders**.
-`gate-cs` is one optional template; nothing is hardcoded to GATE.
+Each item takes its nearest parent topic as its `subject`, and `trackerId` (optional, must belong
+to the same assessment) puts them in a tracker, in order. Importing twice adds a second copy; it
+never merges. `gate-cs` is one optional template; nothing is hardcoded to GATE.
 
 ---
 
@@ -117,7 +119,8 @@ List query: `page`, `pageSize`, `search`, `subject`, `topic`, `priority`, `compl
 Each item returns derived fields the client renders directly:
 
 - `dateStatus`: `NO_DATE | NOT_STARTED | DUE_TODAY | UPCOMING | OVERDUE | COMPLETED`
-- `daysUntilDue`, `isOverdue`, `trackedMinutes`, `attemptCount`, `isBookmarked`
+- `daysUntilDue`, `isOverdue`, `trackedMinutes`, `attemptCount`, `isBookmarked`, `bookmarkId`
+  (notes and mock tests carry `isBookmarked` and `bookmarkId` the same way)
 
 **`OVERDUE` is a display state only.** It never modifies `dueDate`.
 
@@ -244,8 +247,9 @@ This is manual entry and result tracking; **there is no online examination engin
 |---|---|---|
 | GET | `/api/reminders` | List. Query: `status`, `assessmentId`, `from`, `to`. |
 | POST | `/api/assessments/:assessmentId/reminders` | Create a reminder. |
-| PATCH | `/api/reminders/:reminderId` | Edit; returns it to `PENDING`. |
+| PATCH | `/api/reminders/:reminderId` | Edit. Changing **when** it fires (`remindAt`, `localDateTime`, `timeZone`, `advanceMinutes`, `recurrence`) re-arms it as `PENDING`; renaming it or switching `enabled` does not. |
 | POST | `/api/reminders/:reminderId/action` | `{ action: "snooze", snoozeMinutes }`, `dismiss`, or `reset`. |
+| POST | `/api/reminders/disable-all` | Switches every reminder off. There is deliberately no bulk "turn on". |
 | DELETE | `/api/reminders/:reminderId` | Delete. |
 
 **Reminders are opt-in, always.** All reminders are off by default, and nothing in the system
@@ -254,11 +258,23 @@ or a missed reminder. `POST /reminders` is the only creation path and is only re
 an explicit user action.
 
 Provide `remindAt` (an absolute instant) or `localDateTime` plus `timeZone` (a wall-clock
-intent, resolved in that zone so it survives DST). `advanceMinutes` gives an optional early
-notification; `recurrence` is `NONE | DAILY | WEEKLY | MONTHLY`.
+intent, resolved in that zone so it survives DST). `recurrence` is
+`NONE | DAILY | WEEKLY | MONTHLY`; weekly and daily keep the same local time across a DST change,
+and monthly means the same date next calendar month (clamped to month end).
 
-A reminder past its time is reported as `isMissed: true` for display. It is **never**
-automatically rescheduled, duplicated, or turned into a new task.
+`advanceMinutes` is an optional early notice: the reminder notifies that many minutes **before**
+`remindAt`. A snooze replaces the schedule until it ends, so it ignores the advance.
+
+### Missed reminders
+
+A reminder is delivered only inside a **30 minute window** after its notify time. Past that it is
+**missed**: a one-off becomes `MISSED` and stays visible (`isMissed: true`); a recurring one skips
+to its next upcoming occurrence, because that is the recurrence the user asked for, and does not
+replay a backlog. A missed reminder is **never** delivered late, automatically rescheduled,
+duplicated, or turned into a new task, and the study item it was about is not touched.
+
+Snooze sets `snoozedUntil` and leaves `remindAt` alone. The snooze is its own delivery
+occurrence, so it cannot be swallowed by the duplicate guard.
 
 ### Delivery
 

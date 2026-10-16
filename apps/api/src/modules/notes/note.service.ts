@@ -15,6 +15,8 @@ export interface NoteView {
   createdAt: string;
   updatedAt: string;
   isBookmarked: boolean;
+  /** Id of this record's bookmark, so clients can remove it without searching the list. */
+  bookmarkId: string | null;
   excerpt: string;
 }
 
@@ -28,6 +30,7 @@ const NOTE_SELECT = {
   pinned: true,
   createdAt: true,
   updatedAt: true,
+  bookmarks: { select: { id: true }, take: 1 },
   _count: { select: { bookmarks: true } },
 } as const;
 
@@ -41,6 +44,7 @@ const toView = (row: {
   pinned: boolean;
   createdAt: Date;
   updatedAt: Date;
+  bookmarks: Array<{ id: string }>;
   _count: { bookmarks: number };
 }): NoteView => ({
   id: row.id,
@@ -53,6 +57,7 @@ const toView = (row: {
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
   isBookmarked: row._count.bookmarks > 0,
+  bookmarkId: row.bookmarks[0]?.id ?? null,
   excerpt: row.body.slice(0, 160),
 });
 

@@ -10,6 +10,15 @@ automation**: the app tracks time automatically, it does not manage your life au
 
 | Phase | Scope | State |
 |---|---|---|
+| 1 - Foundation | Monorepo, auth, PostgreSQL + Prisma, assessment CRUD, syllabus + study items | Done (API and UI) |
+| 2 - Core tracking | Tracker builder, table/checklist/notes-board, custom fields, saved views, attempts, sessions | Done (API and UI) |
+| 3 - Planning | Live date calculations, manual rescheduling, bookmarks, opt-in reminders | Done (API and UI) |
+| 4 - Progress | Mock tests, analytics, dashboard, tests, docs | Done (API and UI) |
+
+Every page in the sidebar is built: Dashboard, Trackers, Syllabus, Schedule, Sessions, Notes,
+Mock tests, Saved for later, Reminders and Settings.
+
+---|---|---|
 | 1 - Foundation | Monorepo, auth, PostgreSQL + Prisma, assessment CRUD, syllabus + study items | Backend complete; assessments UI done |
 | 2 - Core tracking | Tracker builder, table/checklist/notes-board, custom fields, saved views, attempts, sessions | **Trackers UI done** (builder, 3 layouts, custom fields, saved views, attempts); Sessions UI pending |
 | 3 - Planning | Live date calculations, manual rescheduling, bookmarks, opt-in reminders | Backend complete; reschedule + bookmark toggle available from trackers; Schedule, Saved and Reminders pages pending |
@@ -182,22 +191,21 @@ as a consequence of a missed session, or as a side effect of another action.
 ## Tests
 
 ```bash
-npm test -w @exampilot/api
+npm test -w @exampilot/api    # 62 unit + 9 integration (integration skips without a database)
+npm test -w @exampilot/web    # 29 component and logic tests
 ```
 
-**60 tests, all passing.**
-
-- `src/test/unit.test.ts` — 51 pure tests: calendar-day math across time zones, date-status
-  derivation (proving `OVERDUE` does not mutate the date), session-duration rules including
-  the double-counting case, syllabus tree assembly with orphan and depth handling, layout
-  switching constraints, reminder time resolution and occurrence keys, and the validation
-  rules for every request shape.
-- `src/test/access.test.ts` — 9 integration tests against the real app and database:
-  cross-user access returning 404 across ten endpoints, cross-user bookmarking, missing and
-  forged tokens, session revocation taking effect immediately, **no reminder created as a
+- `apps/api/src/test/unit.test.ts` - pure tests: calendar-day math across time zones, date-status
+  derivation (proving `OVERDUE` does not mutate the date), session-duration rules including the
+  double-counting case, syllabus tree assembly, layout switching constraints, **reminder
+  scheduling** (advance notice, the missed window, snooze, DST-safe repeats, no backlog bursts),
+  **PATCH schemas never nulling fields the client did not send**, and request validation.
+- `apps/api/src/test/access.test.ts` - integration tests against the real app and database:
+  cross-user access returning 404, forged tokens, session revocation, **no reminder created as a
   side effect of import/scheduling/sessions**, an overdue date surviving a re-read unchanged,
-  a double-counted session being rejected, an impossible date range being rejected, and no
-  password hash or token ever appearing in a response.
+  a double-counted session being rejected, and no secrets in responses.
+- `apps/web/src/**/*.test.ts(x)` - the three tracker layouts showing the same items, overdue shown
+  as a label, tree filtering, calendar grid maths, notification de-duplication, form validation.
 
 Integration tests skip themselves when no database is reachable, so `npm test` stays green
 without Docker. Set `SKIP_DB_TESTS=true` to skip them explicitly.
@@ -208,20 +216,23 @@ without Docker. Set `SKIP_DB_TESTS=true` to skip them explicitly.
 
 Stated plainly, so nothing here is mistaken for finished work.
 
-1. **No frontend.** `apps/web` has its build configuration and dependencies in place, but no
-   components, routes or pages. The app cannot be used through a browser yet.
+1. **Not yet exercised end to end in a browser.** Each page is typechecked, built and covered by
+   logic tests, but the full flow against a live database has not been clicked through. Run the
+   setup below and walk the flow in the brief before relying on it.
 2. **Kanban is declared but not implemented.** `TrackerLayout.KANBAN` exists in the schema so
-   it can be added without a migration; selecting it returns a 400. The layout registry and
-   `LAYOUT_SUPPORTED_FIELDS` matrix are the extension point.
+   it can be added without a migration; selecting it returns a 400.
 3. **Reminder delivery needs a running process.** The sweep is an in-process timer. With the
-   API stopped, nothing fires. Browser notifications also need the browser open and permission
-   granted. There is no push channel and no email delivery.
+   API stopped, nothing fires, and anything more than 30 minutes late becomes Missed rather than
+   being sent late. In-app and browser notifications appear while a tab is open (the app polls
+   every 30 seconds); there is no push channel and no email.
 4. **No online examination engine.** Mock tests are manual entry and result tracking, as scoped.
-5. **No calendar UI yet.** The data the calendar view needs (planned start, due date,
-   completion date, days remaining) is all exposed by the API.
-6. **Session revocation is per-session, not per-device**, since the user agent is recorded but
+5. **No drag and drop.** Items and topics are reordered with Move up / Move down, and dates change
+   through the Reschedule form, so everything works from the keyboard.
+6. **No UI to mark a saved view as the default**, though the API supports it and a default view
+   is applied when a tracker opens.
+7. **Session revocation is per-session, not per-device**, since the user agent is recorded but
    not verified.
-7. **No file attachments, social features, gamification or AI-generated plans** — deliberately
+8. **No file attachments, social features, gamification or AI-generated plans** - deliberately
    out of MVP scope, per the product brief.
 
 ---
