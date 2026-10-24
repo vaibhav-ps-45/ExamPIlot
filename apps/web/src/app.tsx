@@ -1,8 +1,23 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from '@/components/layout/app-shell';
 import { LoadingState } from '@/components/ui/states';
 import { useAuth } from '@/hooks/use-auth';
-import { SignInPage, SignUpPage } from '@/pages/auth-pages';
+const SignInPage = lazy(() => import('@/pages/auth-pages').then((module) => ({ default: module.SignInPage })));
+const SignUpPage = lazy(() => import('@/pages/auth-pages').then((module) => ({ default: module.SignUpPage })));
+const AssessmentsPage = lazy(() => import('@/pages/assessments-page').then((module) => ({ default: module.AssessmentsPage })));
+const AssessmentDetailRedirect = lazy(() => import('@/pages/assessments-page').then((module) => ({ default: module.AssessmentDetailRedirect })));
+const DashboardPage = lazy(() => import('@/pages/dashboard-page').then((module) => ({ default: module.DashboardPage })));
+const TrackersPage = lazy(() => import('@/pages/trackers-page').then((module) => ({ default: module.TrackersPage })));
+const SyllabusPage = lazy(() => import('@/pages/syllabus-page').then((module) => ({ default: module.SyllabusPage })));
+const SchedulePage = lazy(() => import('@/pages/schedule-page').then((module) => ({ default: module.SchedulePage })));
+const SessionsPage = lazy(() => import('@/pages/sessions-page').then((module) => ({ default: module.SessionsPage })));
+const MockTestsPage = lazy(() => import('@/pages/mock-tests-page').then((module) => ({ default: module.MockTestsPage })));
+const NotesPage = lazy(() => import('@/pages/notes-page').then((module) => ({ default: module.NotesPage })));
+const SavedPage = lazy(() => import('@/pages/saved-page').then((module) => ({ default: module.SavedPage })));
+const RemindersPage = lazy(() => import('@/pages/reminders-page').then((module) => ({ default: module.RemindersPage })));
+const SettingsPage = lazy(() => import('@/pages/settings-page').then((module) => ({ default: module.SettingsPage })));
+const NotFoundPage = lazy(() => import('@/pages/not-found-page').then((module) => ({ default: module.NotFoundPage })));
 
 /**
  * Route table.
@@ -38,23 +53,8 @@ const RedirectIfAuthenticated = ({ children }: { children: React.ReactNode }) =>
   return <>{children}</>;
 };
 
-import {
-  AssessmentsPage,
-  AssessmentDetailRedirect,
-} from '@/pages/assessments-page';
-import { DashboardPage } from '@/pages/dashboard-page';
-import { TrackersPage } from '@/pages/trackers-page';
-import { SyllabusPage } from '@/pages/syllabus-page';
-import { SchedulePage } from '@/pages/schedule-page';
-import { SessionsPage } from '@/pages/sessions-page';
-import { MockTestsPage } from '@/pages/mock-tests-page';
-import { NotesPage } from '@/pages/notes-page';
-import { SavedPage } from '@/pages/saved-page';
-import { RemindersPage } from '@/pages/reminders-page';
-import { SettingsPage } from '@/pages/settings-page';
-import { NotFoundPage } from '@/pages/not-found-page';
-
 export const AppRoutes = () => (
+  <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><LoadingState label="Loading page…" /></div>}>
   <Routes>
     <Route
       path="/sign-in"
@@ -98,6 +98,7 @@ export const AppRoutes = () => (
       </Route>
     </Route>
   </Routes>
+  </Suspense>
 );
 
 /**

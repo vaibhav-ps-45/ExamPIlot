@@ -7,7 +7,7 @@
   "engines": { "node": ">=20.11.0" },
   "scripts": {
     "build": "npm run build -w @exampilot/shared && npm run build -w @exampilot/api && npm run build -w @exampilot/web",
-    "dev": "npm run dev -w @exampilot/api & npm run dev -w @exampilot/web",
+    "dev": "node scripts/dev.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",

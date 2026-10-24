@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: exampilot
+          POSTGRES_PASSWORD: exampilot
+          POSTGRES_DB: exampilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U exampilot -d exampilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://exampilot:exampilot@localhost:5432/exampilot?schema=public
+      NODE_ENV: test
+      JWT_ACCESS_SECRET: ci-access-token-key-with-more-than-32-characters
+      JWT_REFRESH_SECRET: ci-refresh-token-key-that-is-distinct-and-long
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @exampilot/api
+      - run: npm run prisma:deploy -w @exampilot/api
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test

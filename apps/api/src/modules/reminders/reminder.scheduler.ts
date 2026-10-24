@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
+import { checkDatabaseConnection, getDatabaseAvailability } from '../../lib/prisma.js';
 import {
   expireMissedReminders,
   findDueReminders,
@@ -29,11 +30,26 @@ import {
  */
 let timer: NodeJS.Timeout | null = null;
 let running = false;
+let schedulerStatus: 'starting' | 'healthy' | 'degraded' | 'disabled' = 'starting';
+let lastSweepAt: string | null = null;
+let lastError: string | null = null;
+
+export const getReminderSchedulerHealth = () => ({
+  status: schedulerStatus,
+  lastSweepAt,
+  lastError,
+});
+
+export const markReminderSchedulerDegraded = (error: string): void => {
+  schedulerStatus = 'degraded';
+  lastError = error;
+};
 
 export const runSweep = async (
   now: Date = new Date(),
 ): Promise<{ delivered: number; skipped: number; missed: number }> => {
   if (running) return { delivered: 0, skipped: 0, missed: 0 };
+  if (getDatabaseAvailability() === false) return { delivered: 0, skipped: 0, missed: 0 };
   running = true;
   let delivered = 0;
   let skipped = 0;
@@ -58,8 +74,13 @@ export const runSweep = async (
       delivered += 1;
       logger.info('reminder delivered', { reminderId: reminder.id, userId: reminder.userId });
     }
+    lastSweepAt = now.toISOString();
+    lastError = null;
+    schedulerStatus = 'healthy';
   } catch (error) {
-    logger.error('reminder sweep failed', { error: error instanceof Error ? error.message : String(error) });
+    lastError = error instanceof Error ? error.message : String(error);
+    if (schedulerStatus !== 'degraded') logger.error('reminder sweep failed', { error: lastError });
+    schedulerStatus = 'degraded';
   } finally {
     running = false;
   }
@@ -68,15 +89,23 @@ export const runSweep = async (
 };
 
 export const startReminderScheduler = (): void => {
+  if (schedulerStatus !== 'degraded') schedulerStatus = 'starting';
   if (timer) return;
   const intervalMs = env.REMINDER_SWEEP_INTERVAL_SECONDS * 1000;
   timer = setInterval(() => {
-    void runSweep();
+    void checkDatabaseConnection().then((available) => {
+      if (available) void runSweep();
+      else markReminderSchedulerDegraded('Database unavailable');
+    });
   }, intervalMs);
   timer.unref();
   // One immediate pass so a restart does not delay overdue reminders.
-  void runSweep();
+  if (getDatabaseAvailability() === true) void runSweep();
   logger.info('reminder scheduler started', { intervalSeconds: env.REMINDER_SWEEP_INTERVAL_SECONDS });
+};
+
+export const disableReminderScheduler = (): void => {
+  schedulerStatus = 'disabled';
 };
 
 export const stopReminderScheduler = (): void => {

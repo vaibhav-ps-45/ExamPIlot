@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AppRoutes } from './app';
+import { AppErrorBoundary } from './components/app-error-boundary';
 import { AuthProvider } from './hooks/use-auth';
 import { ThemeProvider } from './hooks/use-theme';
 import './index.css';
@@ -34,10 +35,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <BrowserRouter>
-          <AuthProvider>
-            <AppRoutes />
-            <Toaster position="bottom-right" closeButton richColors />
-          </AuthProvider>
+          <AppErrorBoundary>
+            <AuthProvider>
+              <AppRoutes />
+              <Toaster position="bottom-right" closeButton richColors />
+            </AuthProvider>
+          </AppErrorBoundary>
         </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>

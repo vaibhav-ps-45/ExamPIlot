@@ -18,19 +18,11 @@ automation**: the app tracks time automatically, it does not manage your life au
 Every page in the sidebar is built: Dashboard, Trackers, Syllabus, Schedule, Sessions, Notes,
 Mock tests, Saved for later, Reminders and Settings.
 
----|---|---|
-| 1 - Foundation | Monorepo, auth, PostgreSQL + Prisma, assessment CRUD, syllabus + study items | Backend complete; assessments UI done |
-| 2 - Core tracking | Tracker builder, table/checklist/notes-board, custom fields, saved views, attempts, sessions | **Trackers UI done** (builder, 3 layouts, custom fields, saved views, attempts); Sessions UI pending |
-| 3 - Planning | Live date calculations, manual rescheduling, bookmarks, opt-in reminders | Backend complete; reschedule + bookmark toggle available from trackers; Schedule, Saved and Reminders pages pending |
-| 4 - Progress | Mock tests, analytics, dashboard | Dashboard done; Mock tests page pending |
-
-**Pages still to build:** Syllabus, Sessions, Schedule, Saved for Later, Reminders, Notes, Mock Tests, Settings.
-
 ---
 
 ## Stack
 
-- **Frontend** (scaffolded, not implemented): React 18, TypeScript, Vite, Tailwind CSS, Radix primitives, TanStack React Query, React Hook Form + Zod.
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Radix primitives, TanStack React Query, React Hook Form + Zod.
 - **Backend**: Node 20+, Express 4, TypeScript, Prisma 5, PostgreSQL 16, Zod, JWT, bcrypt.
 - **Database**: PostgreSQL 16 via Docker Compose (host port **5433**).
 - **Tests**: Vitest (unit + HTTP integration).
@@ -47,7 +39,7 @@ Dependency versions are pinned exactly (no `^` or `~`) in each workspace's `pack
 
 ---
 
-## Setup
+## Local development setup
 
 ```bash
 # 1. Install dependencies (npm workspaces)
@@ -67,11 +59,24 @@ npm run db:migrate
 # 5. Seed the demo workspace (optional but recommended)
 npm run db:seed
 
-# 6. Start the API
-npm run dev -w @exampilot/api
+# 6. Start the API and web app together (works on Windows, macOS and Linux)
+npm run dev
 ```
 
-The API listens on `http://localhost:4000`. Check it with `GET /health`.
+The web app is at `http://localhost:5173` and the API is at `http://localhost:4000`.
+`GET /health` reports liveness and dependency status; `GET /health/ready` checks database
+readiness and returns 503 while PostgreSQL is unavailable.
+
+### Run the full stack in Docker
+
+```bash
+docker compose up --build
+```
+
+The web app is at `http://localhost:8080`; the API is proxied through it and is also available
+at `http://localhost:4001` by default (`API_PORT` changes the host port). Compose waits for PostgreSQL, applies migrations, then starts the
+API and web service. The compose file uses local-only development credentials; replace them
+before exposing the stack beyond your machine.
 
 ### Demo credentials
 
@@ -101,7 +106,9 @@ Re-running the seed is safe: it detects the existing demo account and does nothi
 | `npm run db:migrate` | Apply migrations in development |
 | `npm run db:seed` | Seed the demo workspace |
 | `npm run db:studio` | Open Prisma Studio |
+| `npm run dev` | Start API and web app together on Windows, macOS or Linux |
 | `npm run dev -w @exampilot/api` | API with hot reload |
+| `docker compose up --build` | Build and run PostgreSQL, API and web app |
 | `npm run build` | Build all workspaces |
 | `npm run typecheck` | Typecheck every workspace |
 | `npm test` | Run the test suite |
@@ -124,7 +131,7 @@ exampilot/
 │   │       ├── middleware/      Auth, validation, error handling, rate limits
 │   │       ├── modules/         One folder per domain module
 │   │       └── test/            Unit and integration suites
-│   └── web/                     React frontend (scaffolded, not implemented)
+│   └── web/                     React frontend and Nginx config for Docker
 ├── packages/
 │   └── shared/                  Zod schemas and domain constants shared by both
 ├── docs/
@@ -191,8 +198,8 @@ as a consequence of a missed session, or as a side effect of another action.
 ## Tests
 
 ```bash
-npm test -w @exampilot/api    # 62 unit + 9 integration (integration skips without a database)
-npm test -w @exampilot/web    # 29 component and logic tests
+npm test -w @exampilot/api    # unit, health endpoint and database integration tests
+npm test -w @exampilot/web    # component, focus and logic tests
 ```
 
 - `apps/api/src/test/unit.test.ts` - pure tests: calendar-day math across time zones, date-status
@@ -207,8 +214,9 @@ npm test -w @exampilot/web    # 29 component and logic tests
 - `apps/web/src/**/*.test.ts(x)` - the three tracker layouts showing the same items, overdue shown
   as a label, tree filtering, calendar grid maths, notification de-duplication, form validation.
 
-Integration tests skip themselves when no database is reachable, so `npm test` stays green
-without Docker. Set `SKIP_DB_TESTS=true` to skip them explicitly.
+Database integration tests skip themselves when no database is reachable, so `npm test` stays
+green without Docker. Set `SKIP_DB_TESTS=true` to skip them explicitly. CI starts PostgreSQL,
+applies migrations and runs the full suite.
 
 ---
 

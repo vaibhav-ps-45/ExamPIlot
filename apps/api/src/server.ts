@@ -1,14 +1,26 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
-import { disconnectPrisma } from './lib/prisma.js';
-import { startReminderScheduler, stopReminderScheduler } from './modules/reminders/reminder.scheduler.js';
+import { checkDatabaseConnection, disconnectPrisma } from './lib/prisma.js';
+import {
+  disableReminderScheduler,
+  markReminderSchedulerDegraded,
+  startReminderScheduler,
+  stopReminderScheduler,
+} from './modules/reminders/reminder.scheduler.js';
 
 const app = createApp();
 
 const server = app.listen(env.PORT, () => {
   logger.info('api listening', { port: env.PORT, env: env.NODE_ENV });
-  if (!env.REMINDER_SCHEDULER_DISABLED) startReminderScheduler();
+  void checkDatabaseConnection().then((available) => {
+    if (!available) {
+      logger.error('database unavailable at startup; reminder scheduler is degraded');
+      markReminderSchedulerDegraded('Database unavailable at startup');
+    }
+    if (env.REMINDER_SCHEDULER_DISABLED) disableReminderScheduler();
+    else startReminderScheduler();
+  });
 });
 
 const shutdown = (signal: string) => {

@@ -5,6 +5,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react()],
+  cacheDir: path.resolve(__dirname, '../../.vite-cache'),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -13,6 +14,20 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const moduleId = id.replaceAll('\\\\', '/');
+          if (moduleId.includes('/node_modules/react/') || moduleId.includes('/node_modules/react-dom/')) return 'react-vendor';
+          if (moduleId.includes('/node_modules/react-router/')) return 'router-vendor';
+          if (moduleId.includes('/node_modules/@radix-ui/')) return 'radix-vendor';
+          if (moduleId.includes('/node_modules/@tanstack/')) return 'query-vendor';
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: 'jsdom',

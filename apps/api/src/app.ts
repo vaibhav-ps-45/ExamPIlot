@@ -3,6 +3,7 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { env, isProduction } from './config/env.js';
+import { checkDatabaseConnection, getDatabaseAvailability } from './lib/prisma.js';
 import { apiRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { assessmentRouter } from './modules/assessments/assessment.routes.js';
@@ -18,6 +19,7 @@ import { sessionRouter } from './modules/sessions/session.routes.js';
 import { studyItemRouter } from './modules/studyItems/studyItem.routes.js';
 import { syllabusRouter } from './modules/syllabus/syllabus.routes.js';
 import { trackerRouter } from './modules/trackers/tracker.routes.js';
+import { getReminderSchedulerHealth } from './modules/reminders/reminder.scheduler.js';
 
 export const createApp = (): Express => {
   const app = express();
@@ -53,7 +55,26 @@ export const createApp = (): Express => {
   app.use(cookieParser());
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+    const database = getDatabaseAvailability();
+    const scheduler = env.REMINDER_SCHEDULER_DISABLED
+      ? { ...getReminderSchedulerHealth(), status: 'disabled' as const }
+      : getReminderSchedulerHealth();
+    const degraded = database === false || scheduler.status === 'degraded';
+    res.status(200).json({
+      status: degraded ? 'degraded' : 'ok',
+      uptime: Math.round(process.uptime()),
+      database: database === null ? 'checking' : database ? 'available' : 'unavailable',
+      reminderScheduler: scheduler,
+    });
+  });
+
+  app.get('/health/ready', async (_req, res) => {
+    const available = await checkDatabaseConnection();
+    if (!available) {
+      res.status(503).json({ status: 'not_ready', database: 'unavailable' });
+      return;
+    }
+    res.json({ status: 'ready', database: 'available' });
   });
 
   app.use('/api', apiRateLimiter);
